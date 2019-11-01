@@ -9,9 +9,25 @@ import sys
 
 from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.uic import loadUi
+import tensorflow as tf
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.autograd import Variable
+from torch.utils.data import TensorDataset, DataLoader
+from torch.utils.data.sampler import SubsetRandomSampler
+from torchvision import transforms
+import torch
+import matplotlib.pyplot as plt
 import numpy as np
 import cv2
 import math
+import random
+
+loss_1 = []
+loss_50 = []
+acc_50 = []
+validate_list = []
+
 
 class MainWindow (QMainWindow):
     def __init__ (self, parent=None):
@@ -326,20 +342,234 @@ class MainWindow (QMainWindow):
         cv2.imshow("Sobel", equalization)
         
     def Btn_5_1_function(self):
-        print("Btn")
-        
+        for i in range(0, 10):
+            image_num = random.randint(0, len(x_train))
+            #image_num = random.randint(0, len(x_test))
+            first_train_img = np.reshape(x_train[image_num, :], (28, 28))
+            #first_train_img = np.reshape(x_test[image_num, :], (28, 28))
+            plt.matshow(first_train_img, cmap = plt.get_cmap('gray'))
+            plt.show()
+            print(y_train[image_num])
+
     def Btn_5_2_function(self):
-        print("Btn")
+        print("hyerparameters:")
+        print("batch size: 256")
+        print("learning rate: 0.001")
+        print("optimizer: Adam")
         
     def Btn_5_3_function(self):
-        print("Btn")
+        trainer.train_loop(model, train_loader)
+        trainer.test(model, test_loader)
+        
+        plot_range = np.arange(0, len(loss_1), 1)
+        plt.plot(plot_range, loss_1[:])
+        plt.xlabel('iteration')
+        plt.ylabel('loss')
+        plt.title('epoch [0/50]')
+        #plt.savefig('Btn_5_3.png')
+        plt.show()
+        
+        print(validate_list)
         
     def Btn_5_4_function(self):
-        print("Btn")
+        img = cv2.imread('./Btn_5_4.png')
+        cv2.imshow("acc and loss", img)
         
     def Btn_5_5_function(self):
-        print("Btn")
+        user_test_num = int(self.Image_index_box.text())
+        print(type(y_test))
+        print([y_test[user_test_num]])
+        user_test_x, user_test_y = np.array([x_test[user_test_num]]), np.array([y_test[user_test_num]])
+        user_x_test, user_y_test = [
+           torch.from_numpy(user_test_x.reshape(-1, 1, 28, 28)).float(),
+           torch.from_numpy(user_test_y.astype('long'))
+           ]
+        user_test_dataset = TensorDataset(user_x_test, user_y_test)
+        user_test_loader = DataLoader(dataset=user_test_dataset, shuffle=True, batch_size=BATCH_SIZE, **kwargs)
         
+        model = model = torch.load('./F74056166_model.pth')
+        model.eval()
+        
+        
+        user_test_imgae = np.reshape(x_test[user_test_num, :], (28, 28))
+        plt.matshow(user_test_imgae, cmap = plt.get_cmap('gray'))
+        plt.show()
+
+        for text_time in range(10):
+            trainer.test(model, user_test_loader)
+        
+        plt.hist(validate_list, bins=np.linspace(0, 10),  facecolor="blue", edgecolor="black", alpha=0.7)
+       # print(validate_list)
+        plt.show()
+        
+        validate_list.clear()
+        
+        
+mnist = tf.keras.datasets.mnist
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+
+#print(x_train[0:10], x_test[0:10])
+#print(y_train[0:10], y_test[0:10])
+
+""""""
+class LeNet5(nn.Module):
+   def __init__(self):
+       super().__init__()
+       self.conv1 = nn.Conv2d(1, 6, 5, padding=2)
+       self.conv2 = nn.Conv2d(6, 16, 5)
+       self.fc1 = nn.Linear(16*5*5, 120)
+       self.fc2 = nn.Linear(120, 84)
+       self.fc3 = nn.Linear(84, 10)
+   def forward(self, x):
+       x = F.max_pool2d(F.relu(self.conv1(x)), (2, 2))
+       x = F.max_pool2d(F.relu(self.conv2(x)), (2, 2))
+       x = x.view(-1, self.num_flat_features(x))
+       x = F.relu(self.fc1(x))
+       x = F.relu(self.fc2(x))
+       x = self.fc3(x)
+       return x
+   def num_flat_features(self, x):
+       size = x.size()[1:]
+       num_features = 1
+       for s in size:
+           num_features *= s
+       return num_features
+   
+EPOCHS = 1
+BATCH_SIZE = 256
+PRINT_FREQ = 100
+TRAIN_NUMS = 49000
+CUDA = False
+device = torch.device("cpu")
+kwargs = {}
+
+train_x, train_y = torch.from_numpy(x_train.reshape(-1, 1, 28, 28)).float(), torch.from_numpy(y_train.astype('long'))
+test_x, test_y = [
+   torch.from_numpy(x_test.reshape(-1, 1, 28, 28)).float(),
+   torch.from_numpy(y_test.astype('long'))
+   ]
+
+train_dataset = TensorDataset(train_x, train_y)
+test_dataset = TensorDataset(test_x, test_y)
+
+train_loader = DataLoader(dataset=train_dataset, shuffle=True, batch_size=BATCH_SIZE, **kwargs)
+test_loader = DataLoader(dataset=test_dataset, shuffle=True, batch_size=BATCH_SIZE, **kwargs)
+model = LeNet5()
+
+class Trainer:
+    def __init__(self, criterion, optimizer, device):
+        self.criterion = criterion
+        self.optimizer = optimizer
+        
+        self.device = device
+        
+    def train_loop(self, model, train_loader):
+        for epoch in range(EPOCHS):
+            print("---------------- Epoch {} ----------------".format(epoch))
+            self._training_step(model, train_loader, epoch)
+            
+    
+    def test(self, model, test_loader):
+            print("---------------- Testing ----------------")
+            self._validate(model, test_loader, 0, state="Testing")
+            
+    def _training_step(self, model, loader, epoch):
+        model.train()
+        
+        for step, (X, y) in enumerate(loader):
+            X, y = X.to(self.device), y.to(self.device)
+            #N = X.shape[0]
+            
+            self.optimizer.zero_grad()
+            outs = model(X)
+            y = y.long()
+            loss = self.criterion(outs, y)
+            
+            if step >= 0 and (step % PRINT_FREQ == 0):
+                self._state_logging(outs, y, loss, step, epoch, "Training")
+            if epoch == 0:
+                loss_1.append(loss)
+            loss.backward()
+            self.optimizer.step()
+            
+    def _validate(self, model, loader, epoch, state="Validate"):
+        model.eval()
+        outs_list = []
+        loss_list = []
+        y_list = []
+        
+        with torch.no_grad():
+            for step, (X, y) in enumerate(loader):
+                X, y = X.to(self.device), y.to(self.device)
+                #N = X.shape[0]
+
+                outs = model(X)
+                #print(type(outs))
+                #print(outs)
+                y = y.long()
+                validate_list.append(y)
+                loss = self.criterion(outs, y)
+                
+                y_list.append(y)
+                outs_list.append(outs)
+                loss_list.append(loss)
+            
+            y = torch.cat(y_list)
+            outs = torch.cat(outs_list)
+            loss = torch.mean(torch.stack(loss_list), dim=0)
+            self._state_logging(outs, y, loss, step, epoch, state)
+            loss_50.append(loss)
+            acc_50.append(self._accuracy(outs, y))
+                
+                
+    def _state_logging(self, outs, y, loss, step, epoch, state):
+        acc = self._accuracy(outs, y)
+        print("[{:3d}/{}] {} Step {:03d} Loss {:.3f} Acc {:.3f}".format(epoch+1, EPOCHS, state, step, loss, acc))
+
+        
+    def _accuracy(self, output, target):
+        batch_size = target.size(0)
+
+        pred = output.argmax(1)
+        correct = pred.eq(target)
+        acc = correct.float().sum(0) / batch_size
+
+        return acc
+    
+criterion = nn.CrossEntropyLoss()
+#optimizer = torch.optim.SGD(params=model.parameters(),lr=1.25e-2, momentum=0.9)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.99))
+trainer = Trainer(criterion, optimizer, device)
+
+"""
+for aag in range(0, 50):
+    trainer.train_loop(model, train_loader)
+    trainer.test(model, test_loader)
+
+
+
+plot_range = np.arange(0, len(acc_50), 1)
+plt.subplot(2,1,1)
+plt.plot(plot_range, acc_50[:])
+plt.xlabel('epoch')
+plt.ylabel('%')
+plt.title('Accuaccy')
+
+plt.subplot(2,1,2)
+plot_range = np.arange(0, len(loss_50), 1)
+plt.plot(plot_range, loss_50[:])
+plt.xlabel('epoch')
+plt.ylabel('loss')
+
+plt.savefig('Btn_5_4.png')
+plt.show()
+
+torch.save(model, './F74056166_model.pth')
+#torch.save(model.state_dict(), './F74056166_model.pth')
+"""
+
+""""""
         
 if __name__ == '__main__':
     app = QApplication(sys.argv)
